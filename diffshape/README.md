@@ -27,6 +27,35 @@ T1 MRI  ──► prepare_data.py  ──► processed dataset  ──► train_
 pip install antspyx nibabel numpy pyyaml mcubes trimesh tqdm torch h5py scipy matplotlib
 ```
 
+## Quick start: inference with the released checkpoint
+
+Skip training entirely. Use the shipped `checkpoint_final.pth` on your own T1 MRIs:
+
+```bash
+# 1. Write a YAML for your data (see diffshape/configs/example.yaml), then:
+python -m diffshape.prepare_data \
+  --configs diffshape/configs/mydata.yaml \
+  --output-dir processed_dataset
+
+# 2. Run prediction with the released checkpoint (no training needed)
+python -m diffshape.predict \
+  --checkpoint diffshape/checkpoints/checkpoints/checkpoint_final.pth \
+  --dataset mydata \
+  --processed-dir processed_dataset \
+  --output-dir outputs/mydata_K16 \
+  --k-samples 16
+
+# 3. Convert samples to (mu_sdt, w_conf) priors
+python -m diffshape.samples_to_sdt \
+  --samples outputs/mydata_K16/samples_mydata_K16.npy \
+  --meta    outputs/mydata_K16/meta_mydata_K16.json \
+  --output-dir outputs/mydata_K16/priors
+```
+
+The released checkpoint uses `fixed_center=[96,96,96]` with `normal_min_r=18.87`, `normal_max_r=107.16`; these are loaded automatically from `checkpoint_final_stats.npz`.
+
+The rest of this README covers the full pipeline including training.
+
 ## 1. Prepare data
 
 ```bash
