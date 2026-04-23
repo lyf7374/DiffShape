@@ -1,9 +1,8 @@
 """
-Pipeline entry point: config → register → center → GI → processed_dataset
+Pipeline entry point: config → center → GI → processed_dataset
 
 Usage:
     python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml diffshape/configs/dataset2.yaml
-    python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml --skip-registration
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ from diffshape.data.registry import (
     CaseRecord,
     DatasetConfig,
 )
-from diffshape.data.registration import register_case
 from diffshape.data.center_finder import find_center
 from diffshape.data.gi_extractor import extract_gi_single, FIXED_CENTER
 from diffshape.data.splits import apply_split
@@ -46,7 +44,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a_mask.nii"),
     )
-    parser.add_argument("--skip-registration", action="store_true")
     parser.add_argument("--skip-center-finding", action="store_true")
     parser.add_argument("--skip-gi", action="store_true")
     parser.add_argument("--active-folds", nargs="*", type=int, default=None)
@@ -66,7 +63,6 @@ def process_dataset(
     output_dir: Path,
     mni_template: Path,
     mni_mask: Path,
-    skip_registration: bool,
     skip_center_finding: bool,
     skip_gi: bool,
     active_folds: list[int] | None,
@@ -86,52 +82,14 @@ def process_dataset(
     mask_paths = [c.mask_path for c in cases]
     case_ids = [c.case_id for c in cases]
 
-    if not skip_registration:
-        reg_dir = dataset_dir / "registered"
-        reg_dir.mkdir(parents=True, exist_ok=True)
-        registered_images = []
-        registered_masks = []
-        for case in tqdm(
-            cases, desc=f"{cfg.dataset_name}: rigid registration to MNI152"
-        ):
-            reg_img, reg_mask = register_case(
-                case.image_path,
-                case.mask_path,
-                project_root / mni_template,
-                reg_dir,
-                case.case_id,
-            )
-            registered_images.append(reg_img)
-            registered_masks.append(reg_mask)
-        image_paths = registered_images
-        mask_paths = registered_masks
-        summary["registration"] = "rigid_mni152"
-
     if not skip_center_finding:
-        import nibabel as nib
-
-        if not skip_registration:
-            # Post-registration: compute center from each case's registered mask (free, no SyN)
-            centers = []
-            for mask_p in tqdm(
-                mask_paths,
-                desc=f"{cfg.dataset_name}: computing centers from registered masks",
-            ):
-                mdata = nib.load(str(mask_p)).get_fdata()
-                centers.append(
-                    np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64)
-                )
-            centers_arr = np.array(centers, dtype=np.int64)
-        else:
-            centers = []
-            for img_path in tqdm(
-                image_paths, desc=f"{cfg.dataset_name}: finding centers (SyN)"
-            ):
-                center = find_center(
-                    img_path, project_root / mni_template, project_root / mni_mask
-                )
-                centers.append(center)
-            centers_arr = np.array(centers, dtype=np.int64)
+        centers = []
+        for img_path in tqdm(image_paths, desc=f"{cfg.dataset_name}: finding centers"):
+            center = find_center(
+                img_path, project_root / mni_template, project_root / mni_mask
+            )
+            centers.append(center)
+        centers_arr = np.array(centers, dtype=np.int64)
     else:
         centers_arr = np.full((len(cases), 3), 96, dtype=np.int64)
 
@@ -213,7 +171,6 @@ def main() -> None:
             output_dir,
             args.mni_template,
             args.mni_mask,
-            args.skip_registration,
             args.skip_center_finding,
             args.skip_gi,
             args.active_folds,

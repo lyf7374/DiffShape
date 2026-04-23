@@ -35,7 +35,7 @@ python -m diffshape.prepare_data \
   --output-dir processed_dataset
 ```
 
-Alignment is center-based: for each case we locate the brain center and extract the GI around it; every case is then shifted to a common `fixed_center = [96, 96, 96]` before training / inference. A rigid ANTs registration to MNI152 is available as an optional orientation-normalization step — pass `--skip-registration` to skip it (the default center-finding path uses a SyN warp to the MNI template to locate the brain center, no image resampling).
+Alignment is center-based: for each case we locate the brain center and extract the GI around it; every case is then shifted to a common `fixed_center = [96, 96, 96]` before training / inference.
 
 ### Adding a new dataset
 
@@ -161,7 +161,7 @@ python -m diffshape.eval_diffusion \
 ```
 diffshape/
 ├── configs/              # one YAML per dataset (see example.yaml)
-├── data/                 # registry, registration, center_finder, gi_extractor, splits
+├── data/                 # registry, center_finder, gi_extractor, splits
 ├── checkpoints/          # released model (checkpoint_final.pth + _stats.npz)
 ├── prepare_data.py       # stage 1
 ├── train_diffusion.py    # stage 2
@@ -182,7 +182,6 @@ diffshape/
 - `cGI_<name>_<n_points>rpt_preC.npy` — `(N, n_points, 3)` point clouds (n_points = n_patch²)
 - `split_train_indices.npy`, `split_test_indices.npy`
 - `meshes/` — exported `.obj` meshes (optional)
-- `registered/` — orientation-normalized NIfTI files (only if the optional rigid registration was run)
 - `summary.json` — run metadata
 
 ## Released checkpoint
