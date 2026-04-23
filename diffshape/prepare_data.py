@@ -1,5 +1,5 @@
 """
-Pipeline entry point: config → center → GI → processed_dataset
+Pipeline entry point: config → rigid register to MNI152 → center → GI → processed_dataset
 
 Usage:
     python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml diffshape/configs/dataset2.yaml
@@ -20,9 +20,11 @@ from diffshape.data.registry import (
     CaseRecord,
     DatasetConfig,
 )
-from diffshape.data.center_finder import find_center
+from diffshape.data.registration import register_case
 from diffshape.data.gi_extractor import extract_gi_single, FIXED_CENTER
 from diffshape.data.splits import apply_split
+
+import nibabel as nib
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,12 +41,6 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a.nii"),
     )
-    parser.add_argument(
-        "--mni-mask",
-        type=Path,
-        default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a_mask.nii"),
-    )
-    parser.add_argument("--skip-center-finding", action="store_true")
     parser.add_argument("--skip-gi", action="store_true")
     parser.add_argument("--active-folds", nargs="*", type=int, default=None)
     parser.add_argument(
@@ -62,8 +58,6 @@ def process_dataset(
     project_root: Path,
     output_dir: Path,
     mni_template: Path,
-    mni_mask: Path,
-    skip_center_finding: bool,
     skip_gi: bool,
     active_folds: list[int] | None,
 ) -> dict:
@@ -76,22 +70,36 @@ def process_dataset(
         "n_patch": cfg.n_patch,
         "n_points": cfg.n_patch * cfg.n_patch,
         "crop_shape": list(cfg.crop_shape),
+        "registration": "rigid_mni152",
     }
 
-    image_paths = [c.image_path for c in cases]
-    mask_paths = [c.mask_path for c in cases]
     case_ids = [c.case_id for c in cases]
 
-    if not skip_center_finding:
-        centers = []
-        for img_path in tqdm(image_paths, desc=f"{cfg.dataset_name}: finding centers"):
-            center = find_center(
-                img_path, project_root / mni_template, project_root / mni_mask
-            )
-            centers.append(center)
-        centers_arr = np.array(centers, dtype=np.int64)
-    else:
-        centers_arr = np.full((len(cases), 3), 96, dtype=np.int64)
+    reg_dir = dataset_dir / "registered"
+    reg_dir.mkdir(parents=True, exist_ok=True)
+    registered_images = []
+    registered_masks = []
+    for case in tqdm(cases, desc=f"{cfg.dataset_name}: rigid registration to MNI152"):
+        reg_img, reg_mask = register_case(
+            case.image_path,
+            case.mask_path,
+            project_root / mni_template,
+            reg_dir,
+            case.case_id,
+        )
+        registered_images.append(reg_img)
+        registered_masks.append(reg_mask)
+    image_paths = registered_images
+    mask_paths = registered_masks
+
+    centers = []
+    for mask_p in tqdm(
+        mask_paths,
+        desc=f"{cfg.dataset_name}: computing centers from registered masks",
+    ):
+        mdata = nib.load(str(mask_p)).get_fdata()
+        centers.append(np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64))
+    centers_arr = np.array(centers, dtype=np.int64)
 
     np.save(dataset_dir / "centers.npy", centers_arr)
     np.save(dataset_dir / "case_ids.npy", np.array(case_ids, dtype=str))
@@ -121,10 +129,8 @@ def process_dataset(
         summary["gi_shape"] = list(gi_array.shape)
 
     splits = apply_split(cases, cfg.split, active_folds=active_folds)
-    split_indices = {}
     for split_name, split_cases in splits.items():
         indices = [case_ids.index(c.case_id) for c in split_cases]
-        split_indices[split_name] = indices
         np.save(
             dataset_dir / f"split_{split_name}_indices.npy",
             np.array(indices, dtype=np.int64),
@@ -170,8 +176,6 @@ def main() -> None:
             project_root,
             output_dir,
             args.mni_template,
-            args.mni_mask,
-            args.skip_center_finding,
             args.skip_gi,
             args.active_folds,
         )
