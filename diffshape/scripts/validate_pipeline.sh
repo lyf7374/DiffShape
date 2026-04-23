@@ -6,7 +6,7 @@ CKPT=${CKPT:-diffshape/checkpoints/checkpoints/checkpoint_final.pth}
 PROCESSED=${PROCESSED:-processed_dataset}
 GPU=${1:-0}
 K=${2:-16}
-DATASET=${3:-cc359}
+DATASET=${3:-my_dataset}
 shift 3 || true
 INDICES="${*:-0 1}"
 PY=${PY:-python}

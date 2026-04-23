@@ -24,7 +24,7 @@ def split_by_kfold(
     test_per_fold: int,
     active_folds: list[int] | None = None,
 ) -> dict[str, list[CaseRecord]]:
-    """K-fold split matching the original GBM125 logic.
+    """K-fold split with fixed train/test partition per fold.
     active_folds: 0-indexed fold indices to include in train/test.
     Remaining folds go to 'unseen'."""
     if active_folds is None:

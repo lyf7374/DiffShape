@@ -31,20 +31,20 @@ pip install antspyx nibabel numpy pyyaml mcubes trimesh tqdm torch h5py scipy ma
 
 ```bash
 python -m diffshape.prepare_data \
-  --configs diffshape/configs/cc359.yaml \
+  --configs diffshape/configs/dataset1.yaml diffshape/configs/dataset2.yaml \
   --output-dir processed_dataset
 ```
 
-Add `--skip-registration` if the input is already MNI152-aligned. Multiple configs can be passed at once.
+Add `--skip-registration` if the input is already MNI152-aligned.
 
 ### Adding a new dataset
 
-Drop a YAML in `diffshape/configs/`. Two layouts are supported.
+Drop a YAML in `diffshape/configs/`. See `diffshape/configs/example.yaml` for the full schema. Two layouts are supported.
 
 **`flat_directory`** — images and masks in separate folders:
 
 ```yaml
-dataset_name: my_dataset
+dataset_name: dataset1
 layout: flat_directory
 data_root: "path/to/data"
 image_dir: "images"
@@ -64,7 +64,7 @@ split:
 **`folder_per_case`** — one folder per subject:
 
 ```yaml
-dataset_name: my_dataset
+dataset_name: dataset1
 layout: folder_per_case
 data_root: "path/to/subjects"
 image_filename: "T1.nii.gz"
@@ -85,17 +85,11 @@ split:
 ```bash
 python -m diffshape.train_diffusion \
   --processed-dir processed_dataset \
-  --datasets cc359 gbm125 nfbs \
-  --variant diff_r_rm \
+  --datasets dataset1 dataset2 \
   --gpu 0
 ```
 
-Variants:
-- `diff` — plain MSE loss
-- `diff_r` — radius-weighted loss
-- `diff_r_rm` — radius-weighted loss + random-mask augmentation (**recommended**)
-
-Key hyperparameters: `--timesteps 500`, `--beta-start 1e-4`, `--beta-end 2e-3`, `--n-pc 4096` (n_patch=64 → 64×64 points).
+Multiple datasets listed after `--datasets` are mixed into a single training run. Key hyperparameters: `--timesteps 500`, `--beta-start 1e-4`, `--beta-end 2e-3`, `--n-pc 4096` (n_patch=64 → 64×64 points).
 
 ## 3. Predict
 
@@ -104,9 +98,9 @@ Produces K diffusion samples per case as normalized radii on a fixed direction g
 ```bash
 python -m diffshape.predict \
   --checkpoint diffshape/checkpoints/checkpoints/checkpoint_final.pth \
-  --dataset cc359 \
+  --dataset dataset1 \
   --processed-dir processed_dataset \
-  --output-dir outputs/cc359_K16 \
+  --output-dir outputs/dataset1_K16 \
   --k-samples 16 \
   --ddim-steps 50 \
   --indices 0 1 2        # optional; default: all cases in the dataset
@@ -120,9 +114,9 @@ python -m diffshape.predict \
 
 ```bash
 python -m diffshape.samples_to_sdt \
-  --samples  outputs/cc359_K16/samples_cc359_K16.npy \
-  --meta     outputs/cc359_K16/meta_cc359_K16.json \
-  --output-dir outputs/cc359_K16/priors \
+  --samples  outputs/dataset1_K16/samples_dataset1_K16.npy \
+  --meta     outputs/dataset1_K16/meta_dataset1_K16.json \
+  --output-dir outputs/dataset1_K16/priors \
   --format both          # h5 | nii | both
 ```
 
@@ -136,9 +130,9 @@ Tuning knobs: `--grid-size`, `--smooth-sigma`, `--var-blur`, `--tau`.
 
 ```bash
 python -m diffshape.visualize_samples \
-  --samples  outputs/cc359_K16/samples_cc359_K16.npy \
-  --meta     outputs/cc359_K16/meta_cc359_K16.json \
-  --output-dir outputs/cc359_K16/viz
+  --samples  outputs/dataset1_K16/samples_dataset1_K16.npy \
+  --meta     outputs/dataset1_K16/meta_dataset1_K16.json \
+  --output-dir outputs/dataset1_K16/viz
 ```
 
 Default mode `mean` averages the K samples into a single predicted point cloud per case. `--mode grid` shows K individual samples per case; `--mode overlay` overlays them in one axes; `--mode all` produces all three.
@@ -148,54 +142,25 @@ Default mode `mean` averages the K samples into a single predicted point cloud p
 `scripts/validate_pipeline.sh GPU K DATASET [INDICES...]` chains predict → samples_to_sdt → visualize_samples on a small subset, writing everything to `pipeline_validation/<dataset>_K<K>/`.
 
 ```bash
-bash diffshape/scripts/validate_pipeline.sh 0 16 cc359 0 1 2
+bash diffshape/scripts/validate_pipeline.sh 0 16 dataset1 0 1 2
 ```
 
-## Reproducing the paper
+## Evaluation
 
-The training, evaluation, and robustness scripts below let you retrain and re-evaluate every variant from scratch. Only the best-performing variant (`diff_r_rm` trained on cc359 + gbm125 + nfbs) is shipped as `checkpoint_final.pth` for inference use.
-
-### Evaluation (clean)
-
-`eval_diffusion.py` runs 50-step DDIM sampling (K=16) on the test split of each dataset and reports per-case RMSE (×100) and Chamfer distance.
+`eval_diffusion.py` runs 50-step DDIM sampling on the test split of each dataset and reports per-case RMSE (×100) and Chamfer distance. Pass `--mask-ratio r` to apply a centered-cube occlusion of side `r^(1/3) * D` for robustness testing.
 
 ```bash
 python -m diffshape.eval_diffusion \
   --checkpoint diffshape/checkpoints/checkpoints/checkpoint_final.pth \
-  --datasets cc359 gbm125 nfbs \
+  --datasets dataset1 dataset2 \
   --gpu 0
 ```
-
-Batch-evaluate every variant after training with `scripts/eval_mixed.sh <GPU>` (3-dataset models) or `scripts/eval_cc359.sh <GPU>` (CC359-only models).
-
-### Robustness
-
-The same entry point, with `--mask-ratio r` applying a centered-cube zero-mask whose side length is `r^(1/3) * D` over the input image, tests how the diffusion prior behaves when part of the image is occluded.
-
-```bash
-python -m diffshape.eval_diffusion \
-  --checkpoint <ckpt>.pth \
-  --datasets cc359 gbm125 nfbs \
-  --mask-ratio 0.4 \
-  --gpu 0
-```
-
-Full sweeps at ratios `{0.2, 0.4, 0.6, 0.8}` over the `_r` and `_r_rm` variants:
-
-```bash
-bash diffshape/scripts/robust_mixed.sh 0
-bash diffshape/scripts/robust_cc359.sh 0
-```
-
-### Training all variants
-
-`scripts/train_mixed.sh <GPU>` and `scripts/train_cc359.sh <GPU>` train the three variants (`diff`, `diff_r`, `diff_r_rm`) on the two data regimes used in the paper.
 
 ## Module layout
 
 ```
 diffshape/
-├── configs/              # one YAML per dataset
+├── configs/              # one YAML per dataset (see example.yaml)
 ├── data/                 # registry, registration, center_finder, gi_extractor, splits
 ├── checkpoints/          # released model (checkpoint_final.pth + _stats.npz)
 ├── prepare_data.py       # stage 1
@@ -204,8 +169,8 @@ diffshape/
 ├── samples_to_sdt.py     # stage 4
 ├── visualize_samples.py  # visualization
 ├── inference.py          # shared inference utilities
-├── eval_diffusion.py     # paper evaluation + robustness (clean / mask-ratio)
-└── scripts/              # train / eval / robust / validate launch scripts
+├── eval_diffusion.py     # evaluation (clean / mask-ratio)
+└── scripts/              # launch scripts
 ```
 
 ## Processed dataset layout
@@ -220,6 +185,6 @@ diffshape/
 - `registered/` — MNI152-aligned NIfTI files (if registration was run)
 - `summary.json` — run metadata
 
-## Final checkpoint
+## Released checkpoint
 
-`diffshape/checkpoints/checkpoints/checkpoint_final.pth` (+ `checkpoint_final_stats.npz`) is the released model — `diff_r_rm` trained on cc359 + gbm125 + nfbs. Loaded by default in `predict.py` via the `--checkpoint` flag.
+`diffshape/checkpoints/checkpoints/checkpoint_final.pth` (+ `checkpoint_final_stats.npz`) is the released model, loaded via the `--checkpoint` flag in `predict.py` and `eval_diffusion.py`.

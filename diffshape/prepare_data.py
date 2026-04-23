@@ -2,9 +2,10 @@
 Pipeline entry point: config → register → center → GI → processed_dataset
 
 Usage:
-    python -m diffshape.prepare_data --configs diffshape/configs/cc359.yaml diffshape/configs/gbm125.yaml
-    python -m diffshape.prepare_data --configs diffshape/configs/cc359.yaml --skip-registration
+    python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml diffshape/configs/dataset2.yaml
+    python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml --skip-registration
 """
+
 from __future__ import annotations
 
 import argparse
@@ -14,7 +15,12 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from diffshape.data.registry import load_config, discover_cases, CaseRecord, DatasetConfig
+from diffshape.data.registry import (
+    load_config,
+    discover_cases,
+    CaseRecord,
+    DatasetConfig,
+)
 from diffshape.data.registration import register_case
 from diffshape.data.center_finder import find_center
 from diffshape.data.gi_extractor import extract_gi_single, FIXED_CENTER
@@ -22,23 +28,34 @@ from diffshape.data.splits import apply_split
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare processed dataset from config")
+    parser = argparse.ArgumentParser(
+        description="Prepare processed dataset from config"
+    )
     parser.add_argument("--configs", nargs="+", type=Path, required=True)
-    parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parent.parent)
+    parser.add_argument(
+        "--project-root", type=Path, default=Path(__file__).resolve().parent.parent
+    )
     parser.add_argument("--output-dir", type=Path, default=Path("processed_dataset"))
     parser.add_argument(
-        "--mni-template", type=Path,
+        "--mni-template",
+        type=Path,
         default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a.nii"),
     )
     parser.add_argument(
-        "--mni-mask", type=Path,
+        "--mni-mask",
+        type=Path,
         default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a_mask.nii"),
     )
     parser.add_argument("--skip-registration", action="store_true")
     parser.add_argument("--skip-center-finding", action="store_true")
     parser.add_argument("--skip-gi", action="store_true")
     parser.add_argument("--active-folds", nargs="*", type=int, default=None)
-    parser.add_argument("--limit", type=int, default=None, help="Max cases per dataset (for smoke testing)")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max cases per dataset (for smoke testing)",
+    )
     return parser.parse_args()
 
 
@@ -74,10 +91,15 @@ def process_dataset(
         reg_dir.mkdir(parents=True, exist_ok=True)
         registered_images = []
         registered_masks = []
-        for case in tqdm(cases, desc=f"{cfg.dataset_name}: rigid registration to MNI152"):
+        for case in tqdm(
+            cases, desc=f"{cfg.dataset_name}: rigid registration to MNI152"
+        ):
             reg_img, reg_mask = register_case(
-                case.image_path, case.mask_path,
-                project_root / mni_template, reg_dir, case.case_id,
+                case.image_path,
+                case.mask_path,
+                project_root / mni_template,
+                reg_dir,
+                case.case_id,
             )
             registered_images.append(reg_img)
             registered_masks.append(reg_mask)
@@ -87,17 +109,27 @@ def process_dataset(
 
     if not skip_center_finding:
         import nibabel as nib
+
         if not skip_registration:
             # Post-registration: compute center from each case's registered mask (free, no SyN)
             centers = []
-            for mask_p in tqdm(mask_paths, desc=f"{cfg.dataset_name}: computing centers from registered masks"):
+            for mask_p in tqdm(
+                mask_paths,
+                desc=f"{cfg.dataset_name}: computing centers from registered masks",
+            ):
                 mdata = nib.load(str(mask_p)).get_fdata()
-                centers.append(np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64))
+                centers.append(
+                    np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64)
+                )
             centers_arr = np.array(centers, dtype=np.int64)
         else:
             centers = []
-            for img_path in tqdm(image_paths, desc=f"{cfg.dataset_name}: finding centers (SyN)"):
-                center = find_center(img_path, project_root / mni_template, project_root / mni_mask)
+            for img_path in tqdm(
+                image_paths, desc=f"{cfg.dataset_name}: finding centers (SyN)"
+            ):
+                center = find_center(
+                    img_path, project_root / mni_template, project_root / mni_mask
+                )
                 centers.append(center)
             centers_arr = np.array(centers, dtype=np.int64)
     else:
@@ -109,7 +141,9 @@ def process_dataset(
     if not skip_gi:
         mesh_dir = dataset_dir / "meshes"
         all_points = []
-        for i, case in enumerate(tqdm(cases, desc=f"{cfg.dataset_name}: GI extraction")):
+        for i, case in enumerate(
+            tqdm(cases, desc=f"{cfg.dataset_name}: GI extraction")
+        ):
             points = extract_gi_single(
                 str(mask_paths[i]),
                 centers_arr[i],
@@ -121,7 +155,11 @@ def process_dataset(
             )
             all_points.append(points)
         gi_array = np.array(all_points)
-        np.save(dataset_dir / f"cGI_{cfg.dataset_name}_{cfg.n_patch * cfg.n_patch}rpt_preC.npy", gi_array)
+        np.save(
+            dataset_dir
+            / f"cGI_{cfg.dataset_name}_{cfg.n_patch * cfg.n_patch}rpt_preC.npy",
+            gi_array,
+        )
         summary["gi_shape"] = list(gi_array.shape)
 
     splits = apply_split(cases, cfg.split, active_folds=active_folds)
@@ -129,13 +167,19 @@ def process_dataset(
     for split_name, split_cases in splits.items():
         indices = [case_ids.index(c.case_id) for c in split_cases]
         split_indices[split_name] = indices
-        np.save(dataset_dir / f"split_{split_name}_indices.npy", np.array(indices, dtype=np.int64))
+        np.save(
+            dataset_dir / f"split_{split_name}_indices.npy",
+            np.array(indices, dtype=np.int64),
+        )
     summary["splits"] = {k: len(v) for k, v in splits.items()}
 
     np.save(dataset_dir / "fixed_sampling_center.npy", FIXED_CENTER)
+
     def _to_relative(paths, base):
         base = Path(base).resolve()
-        return np.array([str(Path(p).resolve().relative_to(base)) for p in paths], dtype=str)
+        return np.array(
+            [str(Path(p).resolve().relative_to(base)) for p in paths], dtype=str
+        )
 
     np.save(dataset_dir / "image_paths.npy", _to_relative(image_paths, output_dir))
     np.save(dataset_dir / "mask_paths.npy", _to_relative(mask_paths, output_dir))
@@ -159,13 +203,19 @@ def main() -> None:
         cfg = load_config(config_path)
         cases = discover_cases(cfg, project_root)
         if args.limit is not None:
-            cases = cases[:args.limit]
+            cases = cases[: args.limit]
         print(f"[{cfg.dataset_name}] Discovered {len(cases)} cases")
 
         summary = process_dataset(
-            cfg, cases, project_root, output_dir,
-            args.mni_template, args.mni_mask,
-            args.skip_registration, args.skip_center_finding, args.skip_gi,
+            cfg,
+            cases,
+            project_root,
+            output_dir,
+            args.mni_template,
+            args.mni_mask,
+            args.skip_registration,
+            args.skip_center_finding,
+            args.skip_gi,
             args.active_folds,
         )
         all_summaries[cfg.dataset_name] = summary

@@ -25,7 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Diffusion training")
     parser.add_argument("--processed-dir", type=Path, required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
-    parser.add_argument("--variant", type=str, default="diff", choices=["diff", "diff_r", "diff_r_rm"])
+    parser.add_argument(
+        "--variant",
+        type=str,
+        default="diff_r_rm",
+        choices=["diff", "diff_r", "diff_r_rm"],
+    )
     parser.add_argument("--gpu", type=str, default="0")
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--epochs", type=int, default=300)
@@ -58,7 +63,7 @@ def convert2GI_fast(GI: np.ndarray, n_patch: int) -> np.ndarray:
     theta_grid, phi_grid = np.meshgrid(theta_centers, phi_centers)
     angles = np.stack([theta_grid.ravel(), phi_grid.ravel()], axis=-1)
 
-    r = np.sqrt((GI ** 2).sum(axis=-1))
+    r = np.sqrt((GI**2).sum(axis=-1))
     theta_a, phi_a = angles[:, 0], angles[:, 1]
     x = r * np.sin(phi_a) * np.cos(theta_a)
     y = r * np.sin(phi_a) * np.sin(theta_a)
@@ -104,18 +109,23 @@ def random_mask(
             continue
 
         def rand_coord(max_len):
-            return torch.randint(margin, max_len - margin - sz, (1,), device=device).item()
+            return torch.randint(
+                margin, max_len - margin - sz, (1,), device=device
+            ).item()
 
         if cut:
             z, y, x = map(rand_coord, (D, H, W))
-            imgs[b, :, z:z+sz, y:y+sz, x:x+sz] = torch.randn_like(imgs[b, :, z:z+sz, y:y+sz, x:x+sz]) * noise_std
+            imgs[b, :, z : z + sz, y : y + sz, x : x + sz] = (
+                torch.randn_like(imgs[b, :, z : z + sz, y : y + sz, x : x + sz])
+                * noise_std
+            )
         else:
             z1, y1, x1 = map(rand_coord, (D, H, W))
-            patch = imgs[b, :, z1:z1+sz, y1:y1+sz, x1:x1+sz].clone()
+            patch = imgs[b, :, z1 : z1 + sz, y1 : y1 + sz, x1 : x1 + sz].clone()
             scale = torch.empty(1, device=device).uniform_(0.7, 1.3)
             patch = patch * scale
             z2, y2, x2 = map(rand_coord, (D, H, W))
-            imgs[b, :, z2:z2+sz, y2:y2+sz, x2:x2+sz] = patch
+            imgs[b, :, z2 : z2 + sz, y2 : y2 + sz, x2 : x2 + sz] = patch
 
     return imgs.squeeze(0) if squeeze_back else imgs
 
@@ -170,7 +180,7 @@ def _resolve_image_paths(raw_paths: np.ndarray, processed_dir: Path) -> np.ndarr
         if os.path.isabs(p):
             idx = p.find(marker)
             if idx >= 0:
-                p = str(processed_dir / p[idx + len("processed_dataset") + 1:])
+                p = str(processed_dir / p[idx + len("processed_dataset") + 1 :])
         else:
             p = str(processed_dir / p)
         resolved.append(p)
@@ -206,7 +216,7 @@ def load_processed_dataset(
 
 
 def ensure_square_point_count(n_pc: int) -> int:
-    n_patch = int(n_pc ** 0.5)
+    n_patch = int(n_pc**0.5)
     if n_patch * n_patch != n_pc:
         raise ValueError(f"n_pc must be a perfect square, got {n_pc}")
     return n_patch
@@ -228,45 +238,19 @@ def build_checkpoint_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     return model_path, stats_path
 
 
-def build_gbm125_split_indices(active_folds: list[int]) -> dict[str, np.ndarray]:
-    n_folds = 5
-    fold_size = 25
-    train_per_fold = 17
-    test_per_fold = 8
-
-    if any(fold < 0 or fold >= n_folds for fold in active_folds):
-        raise ValueError(f"gbm125 active_folds must be within [0, {n_folds - 1}]")
-
-    train_indices = []
-    test_indices = []
-    unseen_indices = []
-    active_fold_set = set(active_folds)
-
-    for fold_idx in range(n_folds):
-        start = fold_idx * fold_size
-        fold_indices = list(range(start, start + fold_size))
-        if fold_idx in active_fold_set:
-            train_indices.extend(fold_indices[:train_per_fold])
-            test_indices.extend(fold_indices[train_per_fold:train_per_fold + test_per_fold])
-        else:
-            unseen_indices.extend(fold_indices)
-
-    return {
-        "train": np.array(train_indices, dtype=np.int64),
-        "test": np.array(test_indices, dtype=np.int64),
-        "unseen": np.array(unseen_indices, dtype=np.int64),
-    }
-
-
-def resolve_splits(dataset_name: str, splits: dict[str, np.ndarray], active_folds: list[int] | None) -> dict[str, np.ndarray]:
-    if dataset_name == "gbm125" and active_folds is not None:
-        return build_gbm125_split_indices(active_folds)
+def resolve_splits(
+    dataset_name: str, splits: dict[str, np.ndarray], active_folds: list[int] | None
+) -> dict[str, np.ndarray]:
     return splits
 
 
-def normalize_radius(data: np.ndarray, normal_min_r: float, normal_max_r: float) -> np.ndarray:
+def normalize_radius(
+    data: np.ndarray, normal_min_r: float, normal_max_r: float
+) -> np.ndarray:
     normalized = data.copy()
-    normalized[:, :, 3] = (normalized[:, :, 3] - normal_min_r) / (normal_max_r - normal_min_r)
+    normalized[:, :, 3] = (normalized[:, :, 3] - normal_min_r) / (
+        normal_max_r - normal_min_r
+    )
     return normalized
 
 
@@ -276,7 +260,9 @@ def build_loss_fn(variant: str, r_mean: np.ndarray, r_std: np.ndarray):
 
     def custom_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         eps = 1e-8
-        weights = torch.as_tensor(r_mean * (1 + r_std) + eps, dtype=pred.dtype, device=pred.device)
+        weights = torch.as_tensor(
+            r_mean * (1 + r_std) + eps, dtype=pred.dtype, device=pred.device
+        )
         return torch.sqrt(torch.mean((pred - target) ** 2 / weights))
 
     return custom_loss
@@ -293,7 +279,11 @@ def save_checkpoint(
     fixed_center: np.ndarray,
 ) -> None:
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    state_dict = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
+    state_dict = (
+        model.module.state_dict()
+        if isinstance(model, nn.DataParallel)
+        else model.state_dict()
+    )
     torch.save(state_dict, model_path)
     np.savez(
         stats_path,
@@ -310,7 +300,9 @@ def print_config(args: argparse.Namespace, model_path: Path, stats_path: Path) -
     print("Training configuration")
     print(f"  variant: {args.variant}")
     print(f"  datasets: {', '.join(args.datasets)}")
-    print(f"  active_folds: {args.active_folds if args.active_folds is not None else 'saved splits'}")
+    print(
+        f"  active_folds: {args.active_folds if args.active_folds is not None else 'saved splits'}"
+    )
     print(f"  epochs: {args.epochs}")
     print(f"  batch_size: {args.batch_size}")
     print(f"  lr: {args.lr}")
@@ -356,7 +348,9 @@ def main() -> None:
         if fixed_center is None:
             fixed_center = dataset_fixed_center
         elif not np.allclose(fixed_center, dataset_fixed_center):
-            raise ValueError(f"Inconsistent fixed_center between datasets: {args.datasets}")
+            raise ValueError(
+                f"Inconsistent fixed_center between datasets: {args.datasets}"
+            )
 
         gi_centered = data["gi"] - dataset_fixed_center
         gi_4d = convert2GI_fast(gi_centered, n_patch)
@@ -376,7 +370,9 @@ def main() -> None:
         train_count = len(dataset_splits.get("train", []))
         test_count = len(dataset_splits.get("test", []))
         unseen_count = len(dataset_splits.get("unseen", []))
-        print(f"Loaded {dataset_name}: train={train_count}, test={test_count}, unseen={unseen_count}")
+        print(
+            f"Loaded {dataset_name}: train={train_count}, test={test_count}, unseen={unseen_count}"
+        )
 
     if not all_gi_train:
         raise RuntimeError("No training data found. Check datasets and active_folds.")
@@ -385,9 +381,17 @@ def main() -> None:
         raise RuntimeError("No dataset metadata loaded.")
 
     gi_train_arr = np.asarray(all_gi_train)
-    gi_test_arr = np.asarray(all_gi_test) if all_gi_test else np.empty((0, args.n_pc, 4), dtype=gi_train_arr.dtype)
+    gi_test_arr = (
+        np.asarray(all_gi_test)
+        if all_gi_test
+        else np.empty((0, args.n_pc, 4), dtype=gi_train_arr.dtype)
+    )
     centers_train_arr = np.asarray(all_centers_train)
-    centers_test_arr = np.asarray(all_centers_test) if all_centers_test else np.empty((0, 3), dtype=centers_train_arr.dtype)
+    centers_test_arr = (
+        np.asarray(all_centers_test)
+        if all_centers_test
+        else np.empty((0, 3), dtype=centers_train_arr.dtype)
+    )
 
     normal_min_r = float(np.min(gi_train_arr[:, :, 3]))
     normal_max_r = float(np.max(gi_train_arr[:, :, 3]))
@@ -403,10 +407,22 @@ def main() -> None:
     print(f"Test cases: {len(all_skull_paths_test)}")
     print(f"Radius range: [{normal_min_r:.6f}, {normal_max_r:.6f}]")
 
-    train_dataset = ProcessedDataset(all_skull_paths_train, gi_train_arr, centers_train_arr, norm_method="zs")
-    test_dataset = ProcessedDataset(all_skull_paths_test, gi_test_arr, centers_test_arr, norm_method="zs") if all_skull_paths_test else None
+    train_dataset = ProcessedDataset(
+        all_skull_paths_train, gi_train_arr, centers_train_arr, norm_method="zs"
+    )
+    test_dataset = (
+        ProcessedDataset(
+            all_skull_paths_test, gi_test_arr, centers_test_arr, norm_method="zs"
+        )
+        if all_skull_paths_test
+        else None
+    )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False) if test_dataset else None
+    test_loader = (
+        DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+        if test_dataset
+        else None
+    )
 
     diffusion_schedule = DiffusionSchedule(
         timesteps=args.timesteps,
@@ -422,7 +438,9 @@ def main() -> None:
         model = nn.DataParallel(model, device_ids=device_ids)
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=5e-5)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs, eta_min=1e-6
+    )
 
     use_random_mask = args.variant == "diff_r_rm"
     eval_every = 10
@@ -441,7 +459,9 @@ def main() -> None:
             radius_vectors = batch["radius_vector"].to(device)
             images_in = random_mask(images) if use_random_mask else images
 
-            t = torch.randint(0, diffusion_schedule.timesteps, (images.size(0),), device=device).long()
+            t = torch.randint(
+                0, diffusion_schedule.timesteps, (images.size(0),), device=device
+            ).long()
             noisy_radius, noise = add_noise_batch(diffusion_schedule, radius_vectors, t)
             predicted_noise = model(noisy_radius, images_in, t)
             loss = train_criterion(predicted_noise, noise)
@@ -457,9 +477,13 @@ def main() -> None:
 
         scheduler.step()
         avg_train_loss = epoch_loss / len(train_loader)
-        print(f"Epoch [{epoch + 1}/{args.epochs}] train_loss={avg_train_loss:.6f} lr={scheduler.get_last_lr()[0]:.2e}")
+        print(
+            f"Epoch [{epoch + 1}/{args.epochs}] train_loss={avg_train_loss:.6f} lr={scheduler.get_last_lr()[0]:.2e}"
+        )
 
-        should_eval = test_loader is not None and ((epoch + 1) % eval_every == 0 or epoch + 1 == args.epochs)
+        should_eval = test_loader is not None and (
+            (epoch + 1) % eval_every == 0 or epoch + 1 == args.epochs
+        )
         if not should_eval:
             continue
 
@@ -471,8 +495,12 @@ def main() -> None:
             for batch in test_loader:
                 images = batch["image"].to(device)
                 radius_vectors = batch["radius_vector"].to(device)
-                t = torch.randint(0, diffusion_schedule.timesteps, (images.size(0),), device=device).long()
-                noisy_radius, noise = add_noise_batch(diffusion_schedule, radius_vectors, t)
+                t = torch.randint(
+                    0, diffusion_schedule.timesteps, (images.size(0),), device=device
+                ).long()
+                noisy_radius, noise = add_noise_batch(
+                    diffusion_schedule, radius_vectors, t
+                )
                 predicted_noise = model(noisy_radius, images, t)
                 batch_loss = train_criterion(predicted_noise, noise)
                 eval_loss_sum += batch_loss.item() * images.size(0)

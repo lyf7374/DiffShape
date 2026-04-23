@@ -19,7 +19,6 @@ from diffshape.inference import (
     load_stats,
 )
 from diffshape.train_diffusion import (
-    build_gbm125_split_indices,
     convert2GI_fast,
     ensure_square_point_count,
     load_processed_dataset,
@@ -33,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate diffusion checkpoints")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--gpu", type=str, default="0")
-    parser.add_argument("--datasets", nargs="+", default=["cc359", "gbm125", "nfbs"])
+    parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--ddim-steps", type=int, default=50)
     parser.add_argument("--k-samples", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -65,30 +64,16 @@ def apply_center_mask(images: torch.Tensor, mask_ratio: float) -> torch.Tensor:
     return masked
 
 
-def canonical_dataset_name(name: str) -> str:
-    alias = {"cc359": "cc359", "gbm125": "gbm125", "nfbs": "nfbs"}
-    key = name.lower()
-    if key not in alias:
-        raise ValueError(f"Unsupported dataset: {name}")
-    return alias[key]
-
-
 def get_eval_indices(
     dataset_name: str, data: dict, active_folds: list[int] | None
 ) -> np.ndarray:
     n_cases = len(data["gi"])
-    if dataset_name == "gbm125":
-        if active_folds is None:
-            return np.arange(n_cases, dtype=np.int64)
-        _ = build_gbm125_split_indices(active_folds)
-        return resolve_splits(dataset_name, data["splits"], active_folds).get(
-            "test", np.array([], dtype=np.int64)
-        )
-    if dataset_name == "nfbs":
-        return np.arange(n_cases, dtype=np.int64)
-    return resolve_splits(dataset_name, data["splits"], active_folds).get(
+    test_indices = resolve_splits(dataset_name, data["splits"], active_folds).get(
         "test", np.array([], dtype=np.int64)
     )
+    if test_indices.size == 0:
+        return np.arange(n_cases, dtype=np.int64)
+    return test_indices
 
 
 def prepare_dataset(
@@ -238,7 +223,7 @@ def main() -> None:
 
     print("Dataset  | Metrics")
     print("-" * 100)
-    for name in [canonical_dataset_name(x) for x in args.datasets]:
+    for name in args.datasets:
         data = load_processed_dataset(args.processed_dir, name, args.n_pc)
         indices = get_eval_indices(name, data, args.active_folds)
         dataset = prepare_dataset(data, indices, n_patch, normal_min_r, normal_max_r)

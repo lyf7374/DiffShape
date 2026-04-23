@@ -1,0 +1,45 @@
+# Example dataset config. Copy and adapt for your own data.
+# The `dataset_name` becomes the folder under processed_dataset/ and the
+# value you pass to --datasets / --dataset in later stages.
+
+dataset_name: my_dataset
+description: "Short human-readable description"
+
+# How to discover cases: "flat_directory" or "folder_per_case"
+layout: flat_directory
+
+# Root directory containing the data
+data_root: "path/to/data"
+
+# --- flat_directory layout ---
+# image_dir / mask_dir are subdirectories under data_root.
+# image_pattern / mask_pattern are filename patterns with {case_id}.
+image_dir: "images"
+mask_dir: "masks"
+image_pattern: "{case_id}.nii.gz"
+mask_pattern: "{case_id}_mask.nii.gz"
+
+# Regex extracting case IDs from filenames (named group 'id').
+case_id_regex: "^(?P<id>[A-Za-z0-9_]+)\\.nii\\.gz$"
+case_id_min_length: 3
+
+# --- folder_per_case layout (alternative) ---
+# layout: folder_per_case
+# data_root: "path/to/subjects"
+# image_filename: "T1.nii.gz"
+# mask_filename:
+#   - "mask.nii.gz"
+#   - "brain_mask.nii.gz"
+
+# Preprocessing
+crop_shape: [192, 192, 192]
+crop_function: "legacy"    # "legacy" or "new"
+norm_method: "zs"          # "zs", "mm", or "special"
+
+# Angular sampling (n_patch^2 points per case on a fixed direction grid)
+n_patch: 64
+
+# Train/test split
+split:
+  method: "ratio"          # "ratio", "kfold", or "predefined"
+  train_ratio: 0.7
