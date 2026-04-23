@@ -1,0 +1,40 @@
+# CC359 (Calgary-Campinas-359) — Healthy subjects
+dataset_name: cc359
+description: "Calgary-Campinas-359 healthy brain MRI dataset"
+
+# How to discover cases: "folder_per_case" or "flat_directory"
+layout: flat_directory
+
+# Root directory containing the data
+data_root: "H_data"
+
+# For flat_directory layout:
+#   image_dir / mask_dir are subdirectories under data_root
+#   image_pattern / mask_pattern are filename patterns with {case_id} placeholder
+image_dir: "Original"
+mask_dir: "STAPLE"
+image_pattern: "{case_id}.nii.gz"
+mask_pattern: "{case_id}_staple.nii.gz"
+
+# How to extract case_id from filenames (regex with named group 'id')
+# Applied to filenames in image_dir; must produce IDs that also resolve mask_pattern.
+case_id_regex: "^(?P<id>[A-Za-z0-9_]+)\\.nii\\.gz$"
+# Filter: minimum length of case_id to skip junk files
+case_id_min_length: 3
+
+# Optional: predefined ordering file (.npy with case IDs)
+# If provided, cases are loaded in this order and only listed IDs are used.
+ordering_file: "data_utils_final/H_patients.npy"
+
+# Preprocessing
+crop_shape: [192, 192, 192]
+crop_function: "legacy"          # "legacy" or "new"
+norm_method: "zs"                # normalization for images: "zs", "mm", "special"
+
+# Angular sampling
+n_patch: 64                     # 128x128 = 16384 points
+
+# Train/test split
+split:
+  method: "ratio"                # "ratio" or "kfold" or "predefined"
+  train_ratio: 0.7

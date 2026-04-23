@@ -1,0 +1,20 @@
+# NFBS — Neurofeedback Skull-stripped dataset
+dataset_name: nfbs
+description: "NFBS healthy brain MRI dataset (skull-stripped)"
+
+layout: folder_per_case
+
+data_root: "Health_extra/NFBS"
+
+image_filename: "T1_re.nii.gz"
+mask_filename: "mask_re.nii.gz"
+
+crop_shape: [192, 192, 192]
+crop_function: "legacy"
+norm_method: "zs"
+
+n_patch: 64
+
+# NFBS is used as unseen test set — no train split needed
+split:
+  method: "all_test"

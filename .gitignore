@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.ruff_cache/
+.claude/
+.opencode/
+.vscode/
+.idea/
+processed_dataset/
+outputs/
+pipeline_validation/
+H_data/
+*.egg-info/
