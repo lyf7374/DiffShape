@@ -15,7 +15,7 @@ T1 MRI  ──► prepare_data.py  ──► processed dataset  ──► train_
 
 | Stage | Script | Input | Output |
 |---|---|---|---|
-| Data prep | `prepare_data.py` | YAML config(s) | `processed_dataset/<name>/` (registered NIfTI, centers, point clouds, splits) |
+| Data prep | `prepare_data.py` | YAML config(s) | `processed_dataset/<name>/` (centers, point clouds, splits) |
 | Training | `train_diffusion.py` | processed dataset | `checkpoints/<name>.pth` + `<name>_stats.npz` |
 | Prediction | `predict.py` | checkpoint + processed dataset | `samples_<dataset>_K<k>.npy` + `meta_<dataset>_K<k>.json` |
 | Prior volume | `samples_to_sdt.py` | predict outputs | per-case `mu_sdt`, `w_conf` (h5 / nii.gz) |
@@ -35,7 +35,7 @@ python -m diffshape.prepare_data \
   --output-dir processed_dataset
 ```
 
-Add `--skip-registration` if the input is already MNI152-aligned.
+Alignment is center-based: for each case we locate the brain center and extract the GI around it; every case is then shifted to a common `fixed_center = [96, 96, 96]` before training / inference. A rigid ANTs registration to MNI152 is available as an optional orientation-normalization step — pass `--skip-registration` to skip it (the default center-finding path uses a SyN warp to the MNI template to locate the brain center, no image resampling).
 
 ### Adding a new dataset
 
@@ -182,7 +182,7 @@ diffshape/
 - `cGI_<name>_<n_points>rpt_preC.npy` — `(N, n_points, 3)` point clouds (n_points = n_patch²)
 - `split_train_indices.npy`, `split_test_indices.npy`
 - `meshes/` — exported `.obj` meshes (optional)
-- `registered/` — MNI152-aligned NIfTI files (if registration was run)
+- `registered/` — orientation-normalized NIfTI files (only if the optional rigid registration was run)
 - `summary.json` — run metadata
 
 ## Released checkpoint
