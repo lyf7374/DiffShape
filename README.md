@@ -53,7 +53,6 @@ image_pattern: "{case_id}.nii.gz"
 mask_pattern: "{case_id}_mask.nii.gz"
 case_id_regex: "^(?P<id>[A-Za-z0-9_]+)\\.nii\\.gz$"
 crop_shape: [192, 192, 192]
-crop_function: "legacy"
 norm_method: "zs"
 n_patch: 64
 split:
@@ -72,7 +71,6 @@ mask_filename:
   - "mask.nii.gz"
   - "brain_mask.nii.gz"
 crop_shape: [192, 192, 192]
-crop_function: "legacy"
 norm_method: "zs"
 n_patch: 64
 split:

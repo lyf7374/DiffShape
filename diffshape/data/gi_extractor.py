@@ -1,23 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 
 import mcubes
 import numpy as np
 import trimesh
 
-from datasets.preprocess import process_scan, process_scan_new
+from diffshape.preprocess import process_scan
 
 FIXED_CENTER = np.array([96.0, 96.0, 96.0], dtype=np.float64)
-
-
-def select_crop_fn(name: str) -> Callable[..., np.ndarray]:
-    if name == "legacy":
-        return process_scan
-    if name == "new":
-        return process_scan_new
-    raise ValueError(f"Unsupported crop function: {name}")
 
 
 def sample_point_cloud_by_angular_grid(
@@ -29,7 +20,9 @@ def sample_point_cloud_by_angular_grid(
 ) -> tuple[np.ndarray, int, int]:
     """Angular-bin sampling: assign vertices to (phi, theta) bins, pick max-radius per bin,
     interpolate empty bins from neighbors. Returns (points, empty_count, iterations)."""
-    translated = np.asarray(vertices, dtype=np.float64) - np.asarray(center, dtype=np.float64)
+    translated = np.asarray(vertices, dtype=np.float64) - np.asarray(
+        center, dtype=np.float64
+    )
     radii = np.linalg.norm(translated, axis=1)
     safe_radii = np.where(radii == 0, 1e-12, radii)
     theta = np.arctan2(translated[:, 1], translated[:, 0])
@@ -41,8 +34,12 @@ def sample_point_cloud_by_angular_grid(
     theta_centers = (theta_bins[:-1] + theta_bins[1:]) / 2
     theta_grid, phi_grid = np.meshgrid(theta_centers, phi_centers, indexing="xy")
 
-    phi_idx = np.clip(np.searchsorted(phi_bins, phi, side="right") - 1, 0, n_regions_phi - 1)
-    theta_idx = np.clip(np.searchsorted(theta_bins, theta, side="right") - 1, 0, n_regions_theta - 1)
+    phi_idx = np.clip(
+        np.searchsorted(phi_bins, phi, side="right") - 1, 0, n_regions_phi - 1
+    )
+    theta_idx = np.clip(
+        np.searchsorted(theta_bins, theta, side="right") - 1, 0, n_regions_theta - 1
+    )
     flat_idx = phi_idx * n_regions_theta + theta_idx
 
     order = np.lexsort((-radii, flat_idx))
@@ -77,9 +74,14 @@ def sample_point_cloud_by_angular_grid(
         raise RuntimeError("No mesh vertices assigned to any angular bin.")
 
     neighbor_offsets = [
-        (-1, -1), (-1, 0), (-1, 1),
-        (0, -1),           (0, 1),
-        (1, -1),  (1, 0),  (1, 1),
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
     ]
     while np.isnan(interpolated_grid).any():
         nan_mask = np.isnan(interpolated_grid)
@@ -92,14 +94,18 @@ def sample_point_cloud_by_angular_grid(
             neighbor_count += valid.astype(np.int64)
         fillable = nan_mask & (neighbor_count > 0)
         if not np.any(fillable):
-            raise RuntimeError("Interpolation stalled: no empty bins have valid neighbors.")
+            raise RuntimeError(
+                "Interpolation stalled: no empty bins have valid neighbors."
+            )
         interpolated_grid[fillable] = neighbor_sum[fillable] / neighbor_count[fillable]
         iterations += 1
 
     selected_points = np.empty((n_bins, 3), dtype=np.float64)
     occupied_mask = selected_vertex_idx >= 0
     if cartesian:
-        selected_points[occupied_mask] = np.asarray(vertices, dtype=np.float64)[selected_vertex_idx[occupied_mask]]
+        selected_points[occupied_mask] = np.asarray(vertices, dtype=np.float64)[
+            selected_vertex_idx[occupied_mask]
+        ]
         empty_flat = np.flatnonzero(~occupied_mask)
         if empty_flat.size:
             phi_empty = phi_grid.ravel()[empty_flat]
@@ -108,7 +114,9 @@ def sample_point_cloud_by_angular_grid(
             x = radius_empty * np.sin(phi_empty) * np.cos(theta_empty)
             y = radius_empty * np.sin(phi_empty) * np.sin(theta_empty)
             z = radius_empty * np.cos(phi_empty)
-            selected_points[empty_flat] = np.column_stack((x, y, z)) + np.asarray(center, dtype=np.float64)
+            selected_points[empty_flat] = np.column_stack((x, y, z)) + np.asarray(
+                center, dtype=np.float64
+            )
     else:
         selected_points[:, 0] = interpolated_grid.ravel()
         selected_points[:, 1] = theta_grid.ravel()
@@ -121,15 +129,13 @@ def extract_gi_single(
     mask_path: str | Path,
     crop_center: np.ndarray,
     crop_shape: tuple[int, int, int],
-    crop_function: str,
     n_patch: int,
     mesh_output_dir: Path | None = None,
     case_id: str = "",
 ) -> np.ndarray:
     """Extract GI (Geometric Index) point cloud from a single brain mask.
     Returns (n_patch*n_patch, 3) cartesian points."""
-    crop_fn = select_crop_fn(crop_function)
-    mask_vol = crop_fn(
+    mask_vol = process_scan(
         str(mask_path),
         mask=True,
         output_shape=crop_shape,
@@ -153,7 +159,6 @@ def extract_gi_batch(
     mask_paths: list[str | Path],
     crop_centers: np.ndarray,
     crop_shape: tuple[int, int, int],
-    crop_function: str,
     n_patch: int,
     mesh_output_dir: Path | None = None,
     case_ids: list[str] | None = None,
@@ -169,7 +174,6 @@ def extract_gi_batch(
             mask_paths[i],
             crop_centers[i],
             crop_shape,
-            crop_function,
             n_patch,
             mesh_output_dir,
             case_ids[i],

@@ -17,8 +17,8 @@ from torch.utils.data import DataLoader, Dataset
 
 warnings.filterwarnings("ignore")
 
-from models.SDmodels import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
-from datasets.preprocess import process_scan
+from diffshape.models import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
+from diffshape.preprocess import process_scan
 
 
 def parse_args() -> argparse.Namespace:
@@ -131,7 +131,7 @@ def random_mask(
 
 
 class ProcessedDataset(Dataset):
-    skull_paths: list[str | Path]
+    image_paths: list[str | Path]
     gi_all: np.ndarray
     centers_pre: np.ndarray
     img_shape: tuple[int, int, int] = (192, 192, 192)
@@ -139,24 +139,24 @@ class ProcessedDataset(Dataset):
 
     def __init__(
         self,
-        skull_paths: Sequence[str | Path],
+        image_paths: Sequence[str | Path],
         gi_all: np.ndarray,
         centers_pre: np.ndarray,
         img_shape: tuple[int, int, int] = (192, 192, 192),
         norm_method: str = "zs",
     ):
-        self.skull_paths = list(skull_paths)
+        self.image_paths = list(image_paths)
         self.gi_all = gi_all
         self.centers_pre = centers_pre
         self.img_shape = img_shape
         self.norm_method = norm_method
 
     def __len__(self) -> int:
-        return len(self.skull_paths)
+        return len(self.image_paths)
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         x = process_scan(
-            self.skull_paths[idx],
+            self.image_paths[idx],
             norm_method=self.norm_method,
             output_shape=self.img_shape,
             center=self.centers_pre[idx],
@@ -334,8 +334,8 @@ def main() -> None:
     model_path, stats_path = build_checkpoint_paths(args)
     print_config(args, model_path, stats_path)
 
-    all_skull_paths_train: list[str] = []
-    all_skull_paths_test: list[str] = []
+    all_image_paths_train: list[str] = []
+    all_image_paths_test: list[str] = []
     all_gi_train: list[np.ndarray] = []
     all_gi_test: list[np.ndarray] = []
     all_centers_train: list[np.ndarray] = []
@@ -361,11 +361,11 @@ def main() -> None:
             if split_name == "train":
                 all_gi_train.extend(gi_4d[indices])
                 all_centers_train.extend(data["centers"][indices])
-                all_skull_paths_train.extend(data["image_paths"][indices])
+                all_image_paths_train.extend(data["image_paths"][indices])
             elif split_name == "test":
                 all_gi_test.extend(gi_4d[indices])
                 all_centers_test.extend(data["centers"][indices])
-                all_skull_paths_test.extend(data["image_paths"][indices])
+                all_image_paths_test.extend(data["image_paths"][indices])
 
         train_count = len(dataset_splits.get("train", []))
         test_count = len(dataset_splits.get("test", []))
@@ -403,18 +403,18 @@ def main() -> None:
     r_std = gi_train_arr[:, :, 3].std(axis=0)
     train_criterion = build_loss_fn(args.variant, r_mean, r_std)
 
-    print(f"Training cases: {len(all_skull_paths_train)}")
-    print(f"Test cases: {len(all_skull_paths_test)}")
+    print(f"Training cases: {len(all_image_paths_train)}")
+    print(f"Test cases: {len(all_image_paths_test)}")
     print(f"Radius range: [{normal_min_r:.6f}, {normal_max_r:.6f}]")
 
     train_dataset = ProcessedDataset(
-        all_skull_paths_train, gi_train_arr, centers_train_arr, norm_method="zs"
+        all_image_paths_train, gi_train_arr, centers_train_arr, norm_method="zs"
     )
     test_dataset = (
         ProcessedDataset(
-            all_skull_paths_test, gi_test_arr, centers_test_arr, norm_method="zs"
+            all_image_paths_test, gi_test_arr, centers_test_arr, norm_method="zs"
         )
-        if all_skull_paths_test
+        if all_image_paths_test
         else None
     )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)

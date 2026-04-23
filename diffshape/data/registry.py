@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional
 
-import numpy as np
 import yaml
 
 
@@ -16,7 +15,6 @@ class DatasetConfig:
     layout: str
     data_root: Path
     crop_shape: tuple[int, int, int]
-    crop_function: str
     norm_method: str
     n_patch: int
     split: dict
@@ -30,8 +28,6 @@ class DatasetConfig:
 
     image_filename: Optional[str] = None
     mask_filename: Optional[list[str] | str] = None
-
-    ordering_file: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -58,9 +54,8 @@ def load_config(config_path: str | Path) -> DatasetConfig:
         layout=raw["layout"],
         data_root=Path(raw["data_root"]),
         crop_shape=(crop[0], crop[1], crop[2]),
-        crop_function=raw.get("crop_function", "legacy"),
         norm_method=raw.get("norm_method", "zs"),
-        n_patch=raw.get("n_patch", 128),
+        n_patch=raw.get("n_patch", 64),
         split=raw.get("split", {"method": "all_test"}),
         image_dir=raw.get("image_dir"),
         mask_dir=raw.get("mask_dir"),
@@ -70,13 +65,21 @@ def load_config(config_path: str | Path) -> DatasetConfig:
         case_id_min_length=raw.get("case_id_min_length", 1),
         image_filename=raw.get("image_filename"),
         mask_filename=mask_fn,
-        ordering_file=raw.get("ordering_file"),
     )
 
 
-def _discover_flat_directory(cfg: DatasetConfig, project_root: Path) -> list[CaseRecord]:
-    if not cfg.image_dir or not cfg.mask_dir or not cfg.case_id_regex or not cfg.mask_pattern:
-        raise ValueError("flat_directory layout requires image_dir, mask_dir, case_id_regex, mask_pattern")
+def _discover_flat_directory(
+    cfg: DatasetConfig, project_root: Path
+) -> list[CaseRecord]:
+    if (
+        not cfg.image_dir
+        or not cfg.mask_dir
+        or not cfg.case_id_regex
+        or not cfg.mask_pattern
+    ):
+        raise ValueError(
+            "flat_directory layout requires image_dir, mask_dir, case_id_regex, mask_pattern"
+        )
 
     image_dir = project_root / cfg.data_root / cfg.image_dir
     mask_dir = project_root / cfg.data_root / cfg.mask_dir
@@ -96,18 +99,24 @@ def _discover_flat_directory(cfg: DatasetConfig, project_root: Path) -> list[Cas
         mask_path = mask_dir / mask_name
         if not mask_path.exists():
             raise FileNotFoundError(f"Mask not found for case {case_id}: {mask_path}")
-        cases.append(CaseRecord(
-            dataset=cfg.dataset_name,
-            case_id=case_id,
-            image_path=img_path,
-            mask_path=mask_path,
-        ))
+        cases.append(
+            CaseRecord(
+                dataset=cfg.dataset_name,
+                case_id=case_id,
+                image_path=img_path,
+                mask_path=mask_path,
+            )
+        )
     return cases
 
 
-def _discover_folder_per_case(cfg: DatasetConfig, project_root: Path) -> list[CaseRecord]:
+def _discover_folder_per_case(
+    cfg: DatasetConfig, project_root: Path
+) -> list[CaseRecord]:
     if not cfg.image_filename or not cfg.mask_filename:
-        raise ValueError("folder_per_case layout requires image_filename and mask_filename")
+        raise ValueError(
+            "folder_per_case layout requires image_filename and mask_filename"
+        )
 
     data_dir = project_root / cfg.data_root
     cases: list[CaseRecord] = []
@@ -131,34 +140,15 @@ def _discover_folder_per_case(cfg: DatasetConfig, project_root: Path) -> list[Ca
                 f"No mask found for case {case_id} in {folder}. "
                 f"Tried: {cfg.mask_filename}"
             )
-        cases.append(CaseRecord(
-            dataset=cfg.dataset_name,
-            case_id=case_id,
-            image_path=image_path,
-            mask_path=mask_path,
-        ))
+        cases.append(
+            CaseRecord(
+                dataset=cfg.dataset_name,
+                case_id=case_id,
+                image_path=image_path,
+                mask_path=mask_path,
+            )
+        )
     return cases
-
-
-def _apply_ordering(
-    cases: list[CaseRecord],
-    ordering_file: Path,
-) -> list[CaseRecord]:
-    ordered_ids = np.load(ordering_file, allow_pickle=True)
-    ordered_ids = [str(x) for x in ordered_ids]
-    id_to_case = {c.case_id: c for c in cases}
-
-    ordered: list[CaseRecord] = []
-    for pid in ordered_ids:
-        matches = [cid for cid in id_to_case if pid in cid or cid in pid]
-        if len(matches) == 1:
-            ordered.append(id_to_case[matches[0]])
-        elif pid in id_to_case:
-            ordered.append(id_to_case[pid])
-        else:
-            import warnings
-            warnings.warn(f"Ordering ID '{pid}' not found on disk, skipping")
-    return ordered
 
 
 def discover_cases(
@@ -168,15 +158,7 @@ def discover_cases(
     project_root = Path(project_root)
 
     if cfg.layout == "flat_directory":
-        cases = _discover_flat_directory(cfg, project_root)
-    elif cfg.layout == "folder_per_case":
-        cases = _discover_folder_per_case(cfg, project_root)
-    else:
-        raise ValueError(f"Unknown layout: {cfg.layout}")
-
-    if cfg.ordering_file:
-        ordering_path = project_root / cfg.ordering_file
-        if ordering_path.exists():
-            cases = _apply_ordering(cases, ordering_path)
-
-    return cases
+        return _discover_flat_directory(cfg, project_root)
+    if cfg.layout == "folder_per_case":
+        return _discover_folder_per_case(cfg, project_root)
+    raise ValueError(f"Unknown layout: {cfg.layout}")

@@ -23,7 +23,7 @@ from diffshape.train_diffusion import (
     load_processed_dataset,
     normalize_radius,
 )
-from models.SDmodels import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
+from diffshape.models import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
 
 
 def parse_args() -> argparse.Namespace:

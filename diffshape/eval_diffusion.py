@@ -11,7 +11,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from datasets.preprocess import process_scan
+from diffshape.preprocess import process_scan
 from diffshape.inference import (
     EvalDataset,
     ddim_sample_k,
@@ -25,7 +25,7 @@ from diffshape.train_diffusion import (
     normalize_radius,
     resolve_splits,
 )
-from models.SDmodels import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
+from diffshape.models import ConditionalDiffusionModel_DiT_v2, DiffusionSchedule
 
 
 def parse_args() -> argparse.Namespace:

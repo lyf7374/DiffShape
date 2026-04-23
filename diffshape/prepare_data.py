@@ -114,7 +114,6 @@ def process_dataset(
                 str(mask_paths[i]),
                 centers_arr[i],
                 cfg.crop_shape,
-                cfg.crop_function,
                 cfg.n_patch,
                 mesh_dir,
                 case.case_id,

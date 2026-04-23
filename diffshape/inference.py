@@ -7,8 +7,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from datasets.preprocess import process_scan
-from models.SDmodels import DiffusionSchedule
+from diffshape.preprocess import process_scan
+from diffshape.models import DiffusionSchedule
 
 
 class EvalDataset(Dataset):

@@ -33,8 +33,7 @@ case_id_min_length: 3
 
 # Preprocessing
 crop_shape: [192, 192, 192]
-crop_function: "legacy"    # "legacy" or "new"
-norm_method: "zs"          # "zs", "mm", or "special"
+norm_method: "zs"          # "zs" or "mm"
 
 # Angular sampling (n_patch^2 points per case on a fixed direction grid)
 n_patch: 64
