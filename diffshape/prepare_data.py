@@ -1,6 +1,12 @@
 """
 Pipeline entry point: config → rigid register to MNI152 → center → GI → processed_dataset
 
+The crop centre is estimated WITHOUT the reference mask by default (--center-method template):
+the MNI152 template is registered (SyN) to each rigidly registered image and the median of the
+warped template brain mask is used (diffshape.data.center_finder.find_center). The reference mask
+is only used to build the GI training target. --center-method mask reproduces the previous
+behaviour (median of the registered reference mask).
+
 Usage:
     python -m diffshape.prepare_data --configs diffshape/configs/dataset1.yaml diffshape/configs/dataset2.yaml
 """
@@ -21,6 +27,7 @@ from diffshape.data.registry import (
     DatasetConfig,
 )
 from diffshape.data.registration import register_case
+from diffshape.data.center_finder import find_center
 from diffshape.data.gi_extractor import extract_gi_single, FIXED_CENTER
 from diffshape.data.splits import apply_split
 
@@ -41,6 +48,19 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a.nii"),
     )
+    parser.add_argument(
+        "--mni-mask",
+        type=Path,
+        default=Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a_mask.nii"),
+    )
+    parser.add_argument(
+        "--center-method",
+        choices=["template", "mask"],
+        default="template",
+        help="template: median of the MNI152 brain mask warped (SyN) onto the registered "
+        "image, no reference mask needed (default); mask: median of the registered "
+        "reference mask (previous behaviour)",
+    )
     parser.add_argument("--skip-gi", action="store_true")
     parser.add_argument("--active-folds", nargs="*", type=int, default=None)
     parser.add_argument(
@@ -60,6 +80,8 @@ def process_dataset(
     mni_template: Path,
     skip_gi: bool,
     active_folds: list[int] | None,
+    mni_mask: Path = Path("data_utils/mni_icbm152_t1_tal_nlin_sym_09a_mask.nii"),
+    center_method: str = "template",
 ) -> dict:
     dataset_dir = output_dir / cfg.dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +93,7 @@ def process_dataset(
         "n_points": cfg.n_patch * cfg.n_patch,
         "crop_shape": list(cfg.crop_shape),
         "registration": "rigid_mni152",
+        "center_method": center_method,
     }
 
     case_ids = [c.case_id for c in cases]
@@ -93,12 +116,27 @@ def process_dataset(
     mask_paths = registered_masks
 
     centers = []
-    for mask_p in tqdm(
-        mask_paths,
-        desc=f"{cfg.dataset_name}: computing centers from registered masks",
-    ):
-        mdata = nib.load(str(mask_p)).get_fdata()
-        centers.append(np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64))
+    if center_method == "template":
+        # Label-free: SyN-register the MNI template to the REGISTERED image and take the median
+        # of the warped template mask. find_center reads with reorient="LPI", whose voxel order
+        # equals nibabel's as_closest_canonical used by process_scan, so the centre is in the
+        # frame that the crop is taken in.
+        for img_p in tqdm(
+            image_paths,
+            desc=f"{cfg.dataset_name}: template-based centers (SyN)",
+        ):
+            centers.append(
+                find_center(img_p, project_root / mni_template, project_root / mni_mask)
+            )
+    elif center_method == "mask":
+        for mask_p in tqdm(
+            mask_paths,
+            desc=f"{cfg.dataset_name}: computing centers from registered masks",
+        ):
+            mdata = nib.load(str(mask_p)).get_fdata()
+            centers.append(np.median(np.argwhere(mdata > 0.5), axis=0).astype(np.int64))
+    else:
+        raise ValueError(f"Unknown center method: {center_method}")
     centers_arr = np.array(centers, dtype=np.int64)
 
     np.save(dataset_dir / "centers.npy", centers_arr)
@@ -177,6 +215,8 @@ def main() -> None:
             args.mni_template,
             args.skip_gi,
             args.active_folds,
+            mni_mask=args.mni_mask,
+            center_method=args.center_method,
         )
         all_summaries[cfg.dataset_name] = summary
 
