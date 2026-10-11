@@ -64,7 +64,7 @@ python -m diffshape.prepare_data \
   --output-dir processed_dataset
 ```
 
-Each case is rigidly registered to the MNI152 template (ANTs Rigid), the brain center is taken as the median of the registered mask, and the GI is extracted around that center. At train / inference time every case is shifted to a common `fixed_center = [96, 96, 96]`.
+Each case is rigidly registered to the MNI152 template (ANTs Rigid). The crop center is estimated without the reference mask: the MNI152 template is registered (ANTs SyN) to the registered image and the median of the warped template brain mask is used (`diffshape/data/center_finder.py`). The reference mask is used only to build the GI training target, which is extracted around that center. At train / inference time every case is shifted to a common `fixed_center = [96, 96, 96]`. `--center-method mask` reproduces the previous behaviour (median of the registered reference mask).
 
 ### Adding a new dataset
 
